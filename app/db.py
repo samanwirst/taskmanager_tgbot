@@ -1,6 +1,5 @@
 import asyncpg
 from typing import List, Dict, Optional
-import datetime
 
 class Database:
     def __init__(self, dsn: str):

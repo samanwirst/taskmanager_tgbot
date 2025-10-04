@@ -1,21 +1,10 @@
-import os
 import asyncio
 import logging
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
-from dotenv import load_dotenv
 from db import Database
 from handlers import register_handlers
-
-load_dotenv()
-
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-if not BOT_TOKEN:
-    raise RuntimeError("BOT_TOKEN is not set in environment")
-if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL is not set in environment")
+from config import BOT_TOKEN, DATABASE_URL
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

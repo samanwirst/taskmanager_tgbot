@@ -1,3 +1,4 @@
+import logging
 from aiogram import types
 from aiogram import Dispatcher
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -6,18 +7,12 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
 from db import Database
-import logging
+from config import URGENCY_LABELS
 
 logger = logging.getLogger(__name__)
 
 class AddTaskState(StatesGroup):
     waiting_urgency = State()
-
-URGENCY_LABELS = {
-    0: "Сегодня",
-    1: "На неделю",
-    2: "На месяц",
-}
 
 db: Database = None
 
@@ -52,15 +47,21 @@ async def handle_new_task(message: Message, state: FSMContext):
         return
 
     await state.update_data(task_text=text)
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Today", callback_data="urg:0"),
-         InlineKeyboardButton(text="This week", callback_data="urg:1")],
-        [InlineKeyboardButton(text="This month", callback_data="urg:2")]
-    ])
+    keyboard_rows = []
+    row = []
+    for idx, label in enumerate(URGENCY_LABELS):
+        btn = InlineKeyboardButton(text=label, callback_data=f"urg:{idx}")
+        row.append(btn)
+        if len(row) == 2:
+            keyboard_rows.append(row)
+            row = []
+    if row:
+        keyboard_rows.append(row)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
 
     sent = await message.reply("Choose the task urgency:", reply_markup=kb)
     await state.set_state(AddTaskState.waiting_urgency)
-
 
 async def handle_urgency_callback(callback: CallbackQuery, state: FSMContext):
     data = (callback.data or "")
@@ -103,8 +104,16 @@ async def handle_urgency_callback(callback: CallbackQuery, state: FSMContext):
         return
 
     try:
+        urgency_label = URGENCY_LABELS[urgency]
+    except Exception:
+        urgency_label = str(urgency)
+
+    try:
         if callback.message:
-            await callback.message.edit_text(f'The task saved!\n<i>{task_text}</i>\nUrgency: {URGENCY_LABELS.get(urgency)}')
+            await callback.message.edit_text(
+                f'The task saved!\n<i>{task_text}</i>\nUrgency: {urgency_label}',
+                parse_mode="HTML"
+            )
     except Exception:
         pass
 
@@ -131,7 +140,17 @@ async def cmd_tasks(message: Message):
             created_str = created.isoformat(sep=" ", timespec="minutes")
         else:
             created_str = str(created)
-        text = f"📝 <b>#{t['id']}</b>\n{t['task_text']}\n\nUrgency: <b>{URGENCY_LABELS.get(t['urgency'], t['urgency'])}</b>\nAdded: <i>{created_str}</i>"
+
+        try:
+            urgency_label = URGENCY_LABELS[t["urgency"]]
+        except Exception:
+            urgency_label = str(t["urgency"])
+
+        text = (
+            f"{t['task_text']}\n\n"
+            f"Urgency: <b>{urgency_label}</b>\n"
+            f"Added: <i>{created_str}</i>"
+        )
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Delete❌", callback_data=f"delete:{t['id']}")]
         ])
@@ -159,7 +178,7 @@ async def handle_delete_callback(callback: CallbackQuery):
     if ok:
         try:
             if callback.message:
-                await callback.message.edit_text(f"~~The task deleted~~")
+                await callback.message.edit_text("The task deleted")
         except Exception:
             pass
         await callback.answer("The task deleted")
