@@ -12,6 +12,9 @@ URGENCY_LABELS = [
     "This month",
 ]
 
+# For me much better if there are a lot of tasks and the most urgent ones are in the end of the chat 
+TASKS_REVERSE = False 
+
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is not set in environment")
 if not DATABASE_URL:

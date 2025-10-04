@@ -7,7 +7,7 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
 from db import Database
-from config import URGENCY_LABELS
+from config import URGENCY_LABELS, TASKS_REVERSE
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +133,8 @@ async def cmd_tasks(message: Message):
     if not tasks:
         await message.reply("You don't have any active tasks")
         return
+    
+    if TASKS_REVERSE: tasks.reverse()
 
     for t in tasks:
         created = t["created_at"]
