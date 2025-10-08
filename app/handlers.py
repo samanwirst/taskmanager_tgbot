@@ -7,7 +7,7 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
 from db import Database
-from config import URGENCY_LABELS, TASKS_REVERSE
+from config import URGENCY_LABELS, TASKS_REVERSE, INFO_MESSAGE, INFO_BUTTONS
 import html
 import uuid
 import time
@@ -25,6 +25,7 @@ def register_handlers(dp: Dispatcher, database: Database):
     dp.message.register(cmd_start, Command(commands=["start", "help"]))
     dp.message.register(cmd_tasks, Command(commands=["tasks"]))
     dp.message.register(cmd_history, Command(commands=["history"]))
+    dp.message.register(cmd_info, Command(commands=["info"]))
     dp.message.register(handle_new_task)
     dp.callback_query.register(handle_urgency_callback, Text(startswith="urg:"))
     dp.callback_query.register(handle_delete_callback, Text(startswith="delete:"))
@@ -35,8 +36,40 @@ async def cmd_start(message: Message):
         "Command list:\n"
         "/tasks — show all active tasks\n"
         "/history — show full tasks history\n"
+        "/info — information about the bot\n"
     )
 
+async def cmd_info(message: Message):
+    text = INFO_MESSAGE or "No info available."
+    kb = None
+
+    rows = []
+    for item in (INFO_BUTTONS or []):
+        try:
+            if isinstance(item, dict):
+                title = item.get("title")
+                url = item.get("url")
+            else:
+                title, url = item[0], item[1]
+        except Exception:
+            logger.warning("Invalid INFO_BUTTONS entry: %s", item)
+            continue
+
+        if not title or not url:
+            continue
+        rows.append([InlineKeyboardButton(text=title, url=url)])
+
+    if rows:
+        kb = InlineKeyboardMarkup(inline_keyboard=rows)
+
+    try:
+        await message.answer(text, reply_markup=kb, parse_mode="HTML")
+    except Exception as e:
+        logger.exception("Failed to send /info message")
+        try:
+            await message.answer(html.escape(text))
+        except Exception:
+            pass
 
 async def handle_new_task(message: Message, state: FSMContext):
     if not message.text or message.text.strip().startswith("/"):
