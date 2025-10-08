@@ -37,6 +37,18 @@ class Database:
                 );
                 """
             )
+            await conn.execute(
+                """
+                ALTER TABLE tasks
+                ADD COLUMN IF NOT EXISTS done BOOLEAN DEFAULT false;
+                """
+            )
+            await conn.execute(
+                """
+                ALTER TABLE tasks
+                ADD COLUMN IF NOT EXISTS done_at TIMESTAMP WITH TIME ZONE;
+                """
+            )
 
     async def upsert_user(self, user_id: int, username: Optional[str], fullname: Optional[str]):
         assert self.pool
@@ -72,7 +84,7 @@ class Database:
                 """
                 SELECT id, task_text, urgency, created_at
                 FROM tasks
-                WHERE "user" = $1
+                WHERE "user" = $1 AND done = false
                 ORDER BY urgency ASC, created_at ASC;
                 """,
                 user_id
@@ -87,12 +99,38 @@ class Database:
                 for r in rows
             ]
 
+    async def get_history(self, user_id: int) -> List[Dict]:
+        assert self.pool
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id, task_text, urgency, created_at, done, done_at
+                FROM tasks
+                WHERE "user" = $1
+                ORDER BY created_at ASC;
+                """,
+                user_id
+            )
+            return [
+                {
+                    "id": r["id"],
+                    "task_text": r["task_text"],
+                    "urgency": r["urgency"],
+                    "created_at": r["created_at"],
+                    "done": bool(r["done"]),
+                    "done_at": r["done_at"]
+                }
+                for r in rows
+            ]
+
     async def delete_task(self, task_id: int, user_id: int) -> bool:
         assert self.pool
         async with self.pool.acquire() as conn:
             res = await conn.execute(
                 """
-                DELETE FROM tasks WHERE id = $1 AND "user" = $2;
+                UPDATE tasks
+                SET done = true, done_at = now()
+                WHERE id = $1 AND "user" = $2;
                 """,
                 task_id, user_id
             )

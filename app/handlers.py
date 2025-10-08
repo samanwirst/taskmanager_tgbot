@@ -8,6 +8,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
 from db import Database
 from config import URGENCY_LABELS, TASKS_REVERSE
+import html
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,7 @@ def register_handlers(dp: Dispatcher, database: Database):
     db = database
     dp.message.register(cmd_start, Command(commands=["start", "help"]))
     dp.message.register(cmd_tasks, Command(commands=["tasks"]))
+    dp.message.register(cmd_history, Command(commands=["history"]))
     dp.message.register(handle_new_task)
     dp.callback_query.register(handle_urgency_callback, Text(startswith="urg:"))
     dp.callback_query.register(handle_delete_callback, Text(startswith="delete:"))
@@ -29,7 +31,8 @@ async def cmd_start(message: Message):
     await message.reply(
         "Hey! Send me a message and I'll save it as a task with\n\n"
         "Command list:\n"
-        "/tasks — show all tasks\n"
+        "/tasks — show all active tasks\n"
+        "/history — show full tasks history\n"
     )
 
 
@@ -111,7 +114,7 @@ async def handle_urgency_callback(callback: CallbackQuery, state: FSMContext):
     try:
         if callback.message:
             await callback.message.edit_text(
-                f'The task saved!\n<i>{task_text}</i>\nUrgency: {urgency_label}',
+                f'The task saved!\n<i>{html.escape(task_text)}</i>\nUrgency: {urgency_label}',
                 parse_mode="HTML"
             )
     except Exception:
@@ -149,7 +152,7 @@ async def cmd_tasks(message: Message):
             urgency_label = str(t["urgency"])
 
         text = (
-            f"{t['task_text']}\n\n"
+            f"{html.escape(t['task_text'])}\n\n"
             f"Urgency: <b>{urgency_label}</b>\n"
             f"Added: <i>{created_str}</i>"
         )
@@ -157,6 +160,66 @@ async def cmd_tasks(message: Message):
             [InlineKeyboardButton(text="Delete❌", callback_data=f"delete:{t['id']}")]
         ])
         await message.answer(text, reply_markup=kb, parse_mode="HTML")
+
+
+async def cmd_history(message: Message):
+    user_id = message.from_user.id
+    try:
+        tasks = await db.get_history(user_id=user_id)
+    except Exception:
+        logger.exception("DB error when fetching history")
+        await message.reply("DB error when fetching history")
+        return
+
+    if not tasks:
+        await message.reply("No tasks found")
+        return
+
+    lines = []
+    for t in tasks:
+        created = t["created_at"]
+        if hasattr(created, "isoformat"):
+            created_str = created.isoformat(sep=" ", timespec="minutes")
+        else:
+            created_str = str(created)
+
+        try:
+            urgency_label = URGENCY_LABELS[t["urgency"]]
+        except Exception:
+            urgency_label = str(t["urgency"])
+
+        status = "Closed" if t.get("done") else "Open"
+        line = (
+            f"{html.escape(t['task_text'])} (id: {t['id']})\n"
+            f"Urgency: <b>{urgency_label}</b>\n"
+            f"Added: <i>{created_str}</i>\n"
+            f"Status: <b>{status}</b>"
+        )
+        if t.get("done") and t.get("done_at"):
+            done_at = t["done_at"]
+            if hasattr(done_at, "isoformat"):
+                done_str = done_at.isoformat(sep=" ", timespec="minutes")
+            else:
+                done_str = str(done_at)
+            line += f"\nClosed: <i>{done_str}</i>"
+
+        lines.append(line)
+
+    MAX_LEN = 4000
+    chunks = []
+    cur = ""
+    for entry in lines:
+        addition = entry + "\n\n"
+        if len(cur) + len(addition) > MAX_LEN:
+            chunks.append(cur)
+            cur = addition
+        else:
+            cur += addition
+    if cur:
+        chunks.append(cur)
+
+    for ch in chunks:
+        await message.answer(ch, parse_mode="HTML")
 
 
 async def handle_delete_callback(callback: CallbackQuery):
@@ -173,16 +236,16 @@ async def handle_delete_callback(callback: CallbackQuery):
     try:
         ok = await db.delete_task(task_id=task_id, user_id=user_id)
     except Exception:
-        logger.exception("DB error when deleting task")
+        logger.exception("DB error when deleting/closing task")
         await callback.answer("DB error when deleting task", show_alert=True)
         return
 
     if ok:
         try:
             if callback.message:
-                await callback.message.edit_text("The task deleted")
+                await callback.message.edit_text("The task closed")
         except Exception:
             pass
-        await callback.answer("The task deleted")
+        await callback.answer("The task closed")
     else:
         await callback.answer("The task not found", show_alert=True)
