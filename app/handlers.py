@@ -9,6 +9,8 @@ from aiogram.types import Message, CallbackQuery
 from db import Database
 from config import URGENCY_LABELS, TASKS_REVERSE
 import html
+import uuid
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -45,15 +47,12 @@ async def handle_new_task(message: Message, state: FSMContext):
         await message.reply("Send me a text.")
         return
 
-    current_state = await state.get_state()
-    if current_state == AddTaskState.waiting_urgency.state:
-        return
+    token = uuid.uuid4().hex[:12]
 
-    await state.update_data(task_text=text)
     keyboard_rows = []
     row = []
     for idx, label in enumerate(URGENCY_LABELS):
-        btn = InlineKeyboardButton(text=label, callback_data=f"urg:{idx}")
+        btn = InlineKeyboardButton(text=label, callback_data=f"urg:{token}:{idx}")
         row.append(btn)
         if len(row) == 2:
             keyboard_rows.append(row)
@@ -64,31 +63,51 @@ async def handle_new_task(message: Message, state: FSMContext):
     kb = InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
 
     sent = await message.reply("Choose the task urgency:", reply_markup=kb)
+
+    data = await state.get_data()
+    pending: dict = data.get("pending_tasks") or {}
+
+    pending[token] = {
+        "task_text": text,
+        "keyboard_message_id": getattr(sent, "message_id", None),
+        "created_at": time.time()
+    }
+
+    await state.update_data(pending_tasks=pending)
     await state.set_state(AddTaskState.waiting_urgency)
 
 async def handle_urgency_callback(callback: CallbackQuery, state: FSMContext):
     data = (callback.data or "")
+    parts = data.split(":", 2)
+    if len(parts) != 3:
+        await callback.answer("Incorrect urgency callback.", show_alert=True)
+        return
+
+    _prefix, token, sidx = parts
     try:
-        _, s = data.split(":", 1)
-        urgency = int(s)
+        urgency = int(sidx)
     except Exception:
         await callback.answer("Incorrect urgency.", show_alert=True)
         return
 
-    current_state = await state.get_state()
-    if current_state != AddTaskState.waiting_urgency.state:
-        await callback.answer("The dialog expired or already handled. Give me another task")
-        try:
-            await state.clear()
-        except Exception:
-            pass
+    data_state = await state.get_data()
+    pending: dict = data_state.get("pending_tasks") or {}
+    entry = pending.get(token)
+
+    if not entry:
+        await callback.answer("This task expired or already handled. Please send it again.", show_alert=True)
         return
 
-    data_state = await state.get_data()
-    task_text = data_state.get("task_text")
+    task_text = entry.get("task_text")
     if not task_text:
         await callback.answer("The task text not found. Give me another task", show_alert=True)
-        await state.clear()
+        pending.pop(token, None)
+        await state.update_data(pending_tasks=pending)
+        if not pending:
+            try:
+                await state.clear()
+            except Exception:
+                pass
         return
 
     tg_user = callback.from_user
@@ -103,7 +122,6 @@ async def handle_urgency_callback(callback: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.exception("Error saving task to DB")
         await callback.answer("Error saving task to DB", show_alert=True)
-        await state.clear()
         return
 
     try:
@@ -120,9 +138,16 @@ async def handle_urgency_callback(callback: CallbackQuery, state: FSMContext):
     except Exception:
         pass
 
-    await callback.answer("The task saved✅")
-    await state.clear()
+    pending.pop(token, None)
+    await state.update_data(pending_tasks=pending)
 
+    if not pending:
+        try:
+            await state.clear()
+        except Exception:
+            pass
+
+    await callback.answer("The task saved✅")
 
 async def cmd_tasks(message: Message):
     user_id = message.from_user.id
