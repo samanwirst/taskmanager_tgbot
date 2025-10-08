@@ -18,8 +18,15 @@ TASKS_REVERSE = True
 INFO_MESSAGE = """
 <b>About this bot</b>
 
-This bot saves quick tasks for you — send a message, choose urgency and it's stored.
-You can view active tasks with /tasks and full history with /history.
+Minimalist Task Manager is a focused Telegram bot for rapid task capture and lightweight task management
+
+Send any message and it will be treated as a task. The bot immediately prompts you to assign urgency using three quick buttons: <b>Today</b>, <b>This week</b>, <b>This month</b>. In two simple interactions the task is recorded!
+
+Tasks are stored per Telegram user in a persistent database with timestamps. Use /tasks to view active tasks and /history to view the full task history. Each task display includes urgency, creation time, and a button to close the task.
+
+Design principles: minimal UI, minimal friction, and direct capture. Features are introduced only when they preserve the core simplicity and speed of the workflow
+
+This project is non-commercial and open source. Source code and installation instructions are available in the repository
 """
 
 INFO_BUTTONS = [

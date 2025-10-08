@@ -187,8 +187,8 @@ async def cmd_tasks(message: Message):
     try:
         tasks = await db.get_tasks(user_id=user_id)
     except Exception:
-        logger.exception("DB error when fetching tasks")
-        await message.reply("DB error when fetching tasks")
+        logger.exception("DB error while fetching tasks")
+        await message.reply("DB error while fetching tasks")
         return
 
     if not tasks:
@@ -225,8 +225,8 @@ async def cmd_history(message: Message):
     try:
         tasks = await db.get_history(user_id=user_id)
     except Exception:
-        logger.exception("DB error when fetching history")
-        await message.reply("DB error when fetching history")
+        logger.exception("DB error while fetching history")
+        await message.reply("DB error while fetching history")
         return
 
     if not tasks:
@@ -294,16 +294,16 @@ async def handle_delete_callback(callback: CallbackQuery):
     try:
         ok = await db.delete_task(task_id=task_id, user_id=user_id)
     except Exception:
-        logger.exception("DB error when deleting/closing task")
-        await callback.answer("DB error when deleting task", show_alert=True)
+        logger.exception("DB error while deleting/closing task")
+        await callback.answer("DB error while deleting task", show_alert=True)
         return
 
     if ok:
         try:
             if callback.message:
-                await callback.message.edit_text("The task closed")
+                await callback.message.edit_text("The task has been closed")
         except Exception:
             pass
-        await callback.answer("The task closed")
+        await callback.answer("The task has been closed")
     else:
-        await callback.answer("The task not found", show_alert=True)
+        await callback.answer("Task not found", show_alert=True)
