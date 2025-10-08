@@ -1,14 +1,33 @@
 import asyncpg
 from typing import List, Dict, Optional
+import logging
+import asyncio
+
+logger = logging.getLogger(__name__)
 
 class Database:
     def __init__(self, dsn: str):
         self.dsn = dsn
         self.pool: Optional[asyncpg.pool.Pool] = None
 
-    async def connect(self):
-        self.pool = await asyncpg.create_pool(dsn=self.dsn, min_size=1, max_size=5)
-        await self._create_tables()
+    async def connect(self, retries: int = 10, initial_delay: float = 1.0, max_delay: float = 10.0):
+        last_exc = None
+        for attempt in range(1, retries + 1):
+            try:
+                self.pool = await asyncpg.create_pool(dsn=self.dsn, min_size=1, max_size=5)
+                await self._create_tables()
+                logger.info("Connected to DB (attempt %d)", attempt)
+                return
+            except Exception as e:
+                last_exc = e
+                logger.warning("DB connection attempt %d/%d failed: %s", attempt, retries, e)
+                if attempt == retries:
+                    logger.error("All DB connection attempts failed")
+                    raise
+                delay = min(max_delay, initial_delay * (2 ** (attempt - 1)))
+                jitter = delay * 0.1
+                sleep_for = delay + (jitter * (0.5 - asyncio.get_event_loop().time() % 1))
+                await asyncio.sleep(sleep_for)
 
     async def close(self):
         if self.pool:
